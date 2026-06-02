@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>provider-chatbot — demo</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0b1020; color: #e7e9f3; line-height: 1.6;
+    }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 56px 24px 120px; }
+    h1 { font-size: 30px; margin: 0 0 6px; }
+    .sub { color: #9aa3bf; margin: 0 0 32px; }
+    h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .08em; color: #8c95b5; margin: 32px 0 12px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; }
+    button.ctl {
+      border: 1px solid #2a3354; background: #161d36; color: #e7e9f3;
+      padding: 8px 14px; border-radius: 10px; cursor: pointer; font-size: 14px;
+    }
+    button.ctl:hover { background: #1e2747; }
+    .swatch { width: 30px; height: 30px; border-radius: 8px; border: 2px solid #2a3354; cursor: pointer; padding: 0; }
+    label.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #9aa3bf; }
+    input[type="text"] {
+      background: #0f1530; border: 1px solid #2a3354; color: #e7e9f3;
+      border-radius: 8px; padding: 8px 10px; font-size: 14px; min-width: 260px;
+    }
+    code, pre { font-family: ui-monospace, Menlo, Consolas, monospace; }
+    pre { background: #0f1530; border: 1px solid #1f2747; border-radius: 12px; padding: 16px; overflow-x: auto; font-size: 13px; }
+    a { color: #8bb4ff; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>provider-chatbot</h1>
+    <p class="sub">Vanilla Web Component chat widget — provider-agnostic, framework-agnostic. This page runs a <strong>simulated streaming</strong> adapter (no backend needed). Click the launcher bottom-right. ↘</p>
+
+    <h2>Open / control</h2>
+    <div class="row">
+      <button class="ctl" id="open">Open</button>
+      <button class="ctl" id="close">Close</button>
+      <button class="ctl" id="toggle">Toggle</button>
+      <button class="ctl" id="clear">Clear history</button>
+      <button class="ctl" id="say">Send "hello" programmatically</button>
+    </div>
+
+    <h2>Theme</h2>
+    <div class="row" id="themes">
+      <button class="swatch" style="background:#4f46e5" data-primary="#4f46e5" title="Indigo"></button>
+      <button class="swatch" style="background:#16a34a" data-primary="#16a34a" title="Green"></button>
+      <button class="swatch" style="background:#e11d48" data-primary="#e11d48" title="Rose"></button>
+      <button class="swatch" style="background:#ea580c" data-primary="#ea580c" title="Orange"></button>
+      <button class="swatch" style="background:#0ea5e9" data-primary="#0ea5e9" title="Sky"></button>
+      <button class="swatch" style="background:#111827" data-primary="#111827" title="Ink"></button>
+      <button class="ctl" id="dark">Toggle dark surface</button>
+    </div>
+
+    <h2>Position</h2>
+    <div class="row" id="positions">
+      <button class="ctl" data-pos="bottom-right">bottom-right</button>
+      <button class="ctl" data-pos="bottom-left">bottom-left</button>
+      <button class="ctl" data-pos="top-right">top-right</button>
+      <button class="ctl" data-pos="top-left">top-left</button>
+    </div>
+
+    <h2>Branding</h2>
+    <div class="row">
+      <label class="field">Logo / mascot URL
+        <input type="text" id="logoUrl" placeholder="https://…/mascot.png" />
+      </label>
+      <button class="ctl" id="applyLogo">Apply</button>
+      <button class="ctl" id="clearLogo">Reset</button>
+    </div>
+
+    <h2>Usage</h2>
+    <pre>import { Chatbot } from 'provider-chatbot';
+
+const bot = Chatbot.init({
+  title: 'Support',
+  endpoint: '/api/chat',   // your backend
+  stream: true,
+  theme: { primary: '#4f46e5' },
+});</pre>
+  </div>
+
+  <script type="module">
+    import { Chatbot } from '/src/index.js';
+
+    // --- simulated streaming adapter (stands in for a real provider) ---
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    function canned(input) {
+      const t = input.toLowerCase();
+      if (t.includes('hello') || t.includes('hi')) return "Hey! 👋 I'm a **demo** bot streaming token-by-token. Ask me anything.";
+      if (t.includes('code')) return "Sure, here's a snippet:\n```\nconst sum = (a, b) => a + b;\n```\nIt uses an arrow function.";
+      if (t.includes('provider')) return "I'm *provider-agnostic*. Swap `send`/`endpoint`/`provider` and the UI stays the same. See [the README](https://example.com).";
+      return "You said: “" + input + "”. In a real app this streams from your **endpoint**, **OpenAI**, **Anthropic**, or a custom `send()`.";
+    }
+    async function simulatedSend(messages, { onToken, signal }) {
+      await sleep(350); // think
+      const last = [...messages].reverse().find((m) => m.role === 'user');
+      const reply = canned(last ? last.content : '');
+      for (const ch of reply) {
+        if (signal && signal.aborted) { const e = new Error('aborted'); e.name = 'AbortError'; throw e; }
+        onToken(ch);
+        await sleep(10);
+      }
+      return reply;
+    }
+
+    const bot = Chatbot.init({
+      title: 'Acme Support',
+      subtitle: 'Typically replies instantly',
+      welcomeMessage: 'Hi! 👋 How can I help you today?',
+      footer: 'Powered by provider-chatbot',
+      persist: true,
+      send: simulatedSend,
+      theme: { primary: '#4f46e5' },
+      onMessage: (m) => console.log('[demo] user:', m.content),
+      onResponse: (m) => console.log('[demo] bot:', m.content),
+    });
+
+    const $ = (id) => document.getElementById(id);
+    $('open').onclick = () => bot.open();
+    $('close').onclick = () => bot.close();
+    $('toggle').onclick = () => bot.toggle();
+    $('clear').onclick = () => bot.clear();
+    $('say').onclick = () => { bot.open(); bot.sendMessage('hello'); };
+
+    document.getElementById('themes').addEventListener('click', (e) => {
+      const p = e.target.dataset.primary;
+      if (p) bot.configure({ theme: { primary: p } });
+    });
+    let dark = false;
+    $('dark').onclick = () => {
+      dark = !dark;
+      bot.configure({ theme: dark
+        ? { background: '#15151b', surface: '#222230', text: '#f5f5f7', botBubble: '#26263a', botText: '#f5f5f7', border: '#33334a' }
+        : { background: '#ffffff', surface: '#f4f4f6', text: '#18181b', botBubble: '#f1f1f4', botText: '#18181b', border: '#e6e6ea' }
+      });
+    };
+
+    document.getElementById('positions').addEventListener('click', (e) => {
+      const pos = e.target.dataset.pos;
+      if (pos) bot.configure({ position: pos });
+    });
+
+    $('applyLogo').onclick = () => {
+      const url = $('logoUrl').value.trim();
+      if (url) bot.configure({ logo: url, mascot: url });
+    };
+    $('clearLogo').onclick = () => bot.configure({ logo: null, mascot: null });
+
+    window.bot = bot; // for console poking
+  </script>
+</body>
+</html>

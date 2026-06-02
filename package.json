@@ -1,0 +1,57 @@
+{
+  "name": "provider-chatbot",
+  "version": "0.1.0",
+  "description": "Provider-agnostic, framework-agnostic chat widget. Vanilla JS Web Component with Shadow DOM. Drop into React, Angular, WordPress or plain HTML.",
+  "type": "module",
+  "main": "./dist/chatbot.es.js",
+  "module": "./dist/chatbot.es.js",
+  "types": "./types/index.d.ts",
+  "unpkg": "./dist/chatbot.iife.js",
+  "jsdelivr": "./dist/chatbot.iife.js",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "import": "./dist/chatbot.es.js",
+      "default": "./dist/chatbot.iife.js"
+    },
+    "./dist/*": "./dist/*",
+    "./src/*": "./src/*"
+  },
+  "files": [
+    "dist",
+    "src",
+    "types",
+    "examples",
+    "README.md",
+    "README.es.md"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && vite build --config vite.iife.config.js",
+    "preview": "vite preview"
+  },
+  "keywords": [
+    "chatbot",
+    "chat",
+    "widget",
+    "web-component",
+    "custom-element",
+    "shadow-dom",
+    "vanilla-js",
+    "framework-agnostic",
+    "provider-agnostic",
+    "react",
+    "angular",
+    "wordpress",
+    "llm",
+    "openai",
+    "anthropic",
+    "streaming",
+    "sse"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
+}
