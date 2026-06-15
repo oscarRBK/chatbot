@@ -224,6 +224,175 @@ export function anthropicAdapter(cfg) {
   };
 }
 
+// ---- Make.com webhook (rubrika.es) helpers ----------------------------------
+
+function browserValue(get) {
+  try {
+    return get() || '';
+  } catch {
+    return '';
+  }
+}
+
+function randomId() {
+  try {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  } catch {
+    /* ignore */
+  }
+  return 'v-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+// Stable per-browser visitor id (survives across sessions) kept in localStorage.
+function ensureVisitorId(explicit, storageKey) {
+  if (explicit) return explicit;
+  try {
+    if (typeof localStorage === 'undefined') return randomId();
+    let id = localStorage.getItem(storageKey);
+    if (!id) {
+      id = randomId();
+      localStorage.setItem(storageKey, id);
+    }
+    return id;
+  } catch {
+    return randomId();
+  }
+}
+
+// session_id lives in sessionStorage: per-tab, gone on tab close — like a session.
+function readSession(key) {
+  try {
+    return (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(key)) || null;
+  } catch {
+    return null;
+  }
+}
+function writeSession(key, val) {
+  try {
+    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(key, val);
+  } catch {
+    /* ignore */
+  }
+}
+
+// Explicit cfg value wins; otherwise read utm_* from the current page query string.
+function readUtm(cfg) {
+  let params = null;
+  if (typeof location !== 'undefined') {
+    try {
+      params = new URLSearchParams(location.search);
+    } catch {
+      params = null;
+    }
+  }
+  const utm = cfg.utm || {};
+  const pick = (explicit, key) =>
+    explicit != null ? explicit : params ? params.get(key) || '' : '';
+  return {
+    source: pick(cfg.utmSource ?? utm.source, 'utm_source'),
+    medium: pick(cfg.utmMedium ?? utm.medium, 'utm_medium'),
+    campaign: pick(cfg.utmCampaign ?? utm.campaign, 'utm_campaign'),
+  };
+}
+
+/**
+ * Make.com webhook adapter (rubrika.es chatbot).
+ *
+ * Request body:
+ *   { session_id?, visitor_id, message, page_url, referrer,
+ *     utm_source, utm_medium, utm_campaign, consent, timestamp }
+ * Response body:
+ *   { ok, answer, session_id, conversation_id }
+ *
+ * Session flow: the FIRST request carries no `session_id`; the webhook returns
+ * one and every following request reuses it so the backend keeps context. The
+ * id is held in this closure and mirrored to sessionStorage so it survives a
+ * reload within the same tab. `visitor_id` is a stable per-browser id.
+ *
+ * NOTE: the webhook currently returns HTTP 500 when `session_id` is absent (its
+ * new-session branch). Until that is fixed server-side, the first message will
+ * surface that error. Seed `sessionId` to work around it if needed.
+ */
+export function makeAdapter(cfg) {
+  const {
+    endpoint,
+    visitorId,
+    pageUrl,
+    referrer,
+    consent = true,
+    headers = {},
+    credentials,
+    sessionId: seedSession = null,
+    visitorStorageKey = 'provider-chatbot:visitor',
+    sessionStorageKey = 'provider-chatbot:session',
+    onSession,
+    parseResponse,
+  } = cfg;
+
+  if (!endpoint) {
+    throw new Error('[chatbot] makeAdapter requires `endpoint` (the Make.com webhook URL).');
+  }
+
+  let sessionId = seedSession || readSession(sessionStorageKey);
+  let conversationId = null;
+
+  return async (messages, { signal } = {}) => {
+    // The backend keeps context via session_id, so we send only the last turn.
+    const last = [...messages].reverse().find((m) => m.role === 'user');
+    const utm = readUtm(cfg);
+
+    const body = {
+      ...(sessionId ? { session_id: sessionId } : {}),
+      visitor_id: ensureVisitorId(visitorId, visitorStorageKey),
+      message: last ? last.content : '',
+      page_url: pageUrl != null ? pageUrl : browserValue(() => location.href),
+      referrer: referrer != null ? referrer : browserValue(() => document.referrer),
+      utm_source: utm.source,
+      utm_medium: utm.medium,
+      utm_campaign: utm.campaign,
+      consent: !!consent,
+      timestamp: new Date().toISOString(),
+    };
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+      credentials,
+      signal,
+    });
+    if (!res.ok) {
+      throw new Error(
+        `[chatbot] Make request failed ${res.status} ${res.statusText}: ${await safeText(res)}`
+      );
+    }
+
+    const data = await res.json().catch(() => null);
+    if (!data || data.ok === false) {
+      throw new Error(`[chatbot] Make webhook error${data && data.error ? ': ' + data.error : ''}`);
+    }
+
+    if (data.session_id && data.session_id !== sessionId) {
+      sessionId = data.session_id;
+      writeSession(sessionStorageKey, sessionId);
+    }
+    if (data.conversation_id) conversationId = data.conversation_id;
+    if (typeof onSession === 'function') {
+      try {
+        onSession({ sessionId, conversationId });
+      } catch {
+        /* ignore consumer callback errors */
+      }
+    }
+
+    return parseResponse
+      ? parseResponse(data)
+      : typeof data.answer === 'string'
+        ? data.answer
+        : pickText(data);
+  };
+}
+
 /** Pick the right adapter from user config. */
 export function resolveAdapter(cfg = {}) {
   if (typeof cfg.send === 'function') return cfg.send;
@@ -235,10 +404,13 @@ export function resolveAdapter(cfg = {}) {
   if (['anthropic', 'claude'].includes(provider)) {
     return anthropicAdapter(cfg);
   }
+  if (['make', 'make.com', 'makecom', 'webhook'].includes(provider)) {
+    return makeAdapter(cfg);
+  }
   if (cfg.endpoint) return genericAdapter(cfg);
 
   throw new Error(
     '[chatbot] No transport configured. Provide one of: ' +
-      '`send(messages,{onToken,signal})`, `endpoint`, or `provider` ("openai" | "anthropic").'
+      '`send(messages,{onToken,signal})`, `endpoint`, or `provider` ("openai" | "anthropic" | "make").'
   );
 }

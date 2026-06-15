@@ -535,11 +535,19 @@ export class ChatbotElement extends HTMLElement {
       model: 'model',
       baseURL: 'base-url',
       apiKey: 'api-key',
+      visitorId: 'visitor-id',
+      pageUrl: 'page-url',
+      referrer: 'referrer',
+      utmSource: 'utm-source',
+      utmMedium: 'utm-medium',
+      utmCampaign: 'utm-campaign',
+      sessionId: 'session-id',
     };
     for (const [k, attr] of Object.entries(text)) {
       if (this.hasAttribute(attr)) cfg[k] = a(attr);
     }
     if (this.hasAttribute('stream')) cfg.stream = bool('stream');
+    if (this.hasAttribute('consent')) cfg.consent = bool('consent');
     if (bool('persist')) cfg.persist = true;
     if (bool('start-open')) cfg.startOpen = true;
     if (bool('keep-launcher')) cfg.keepLauncherOpen = true;

@@ -5,7 +5,7 @@
 A tiny, **provider-agnostic** and **framework-agnostic** chat widget.
 
 - 🧩 **One vanilla [Web Component](https://developer.mozilla.org/docs/Web/API/Web_components)** (`<chat-bot>`) with **Shadow DOM** → host page CSS can't break it, and its styles never leak out. Drops into **React, Angular, WordPress, or plain HTML** unchanged.
-- 🔌 **Provider-agnostic** → point it at your own backend (`endpoint`), an OpenAI-compatible API, Anthropic, or a fully custom `send()` function. The UI never changes.
+- 🔌 **Provider-agnostic** → point it at your own backend (`endpoint`), an OpenAI-compatible API, Anthropic, a session-based webhook (Make.com / n8n), or a fully custom `send()` function. The UI never changes.
 - 🌊 **Streaming** (SSE) and non-streaming responses, token-by-token.
 - 🎨 **Per-product theming** via CSS variables — colors, logo, mascot, labels, position.
 - 📦 Ships **ESM** (`import`) for bundlers and **IIFE** (`<script>` → `window.Chatbot`) for WordPress/CDN.
@@ -209,6 +209,51 @@ Chatbot.init({
   },
 });
 ```
+
+### 5. Make.com webhook (session-based backends)
+
+For no-code backends (Make.com, n8n, Zapier…) that keep conversation state **server-side** by session id, instead of receiving the whole message history. The widget sends only the latest user turn plus a `session_id`; the backend returns the reply and the id to reuse.
+
+```js
+Chatbot.init({
+  provider: 'make',
+  endpoint: 'https://hook.eu1.make.com/xxxxxxxxxxxxxxxxxxxxxxxx',
+  consent: true, // pass your real cookie/consent state
+  onSession: ({ sessionId, conversationId }) => console.log(sessionId, conversationId),
+});
+```
+
+**Request body** (sent on every turn):
+
+```json
+{
+  "session_id": "abc123",          // omitted on the first message
+  "visitor_id": "…",               // stable per-browser id, auto-generated
+  "message": "y cuánto cuesta?",   // only the latest user turn
+  "page_url": "…", "referrer": "…",
+  "utm_source": "…", "utm_medium": "…", "utm_campaign": "…",
+  "consent": true,
+  "timestamp": "2026-06-15T10:30:00.000Z"
+}
+```
+
+**Response body:** `{ "ok": true, "answer": "…", "session_id": "…", "conversation_id": "…" }` — the reply is read from `answer`.
+
+Session handling is automatic: the **first** request omits `session_id`; the returned id is reused on every following request (kept in `sessionStorage`, so it survives a reload in the same tab) so the backend keeps context. `visitor_id` is a stable id kept in `localStorage`. `page_url`, `referrer` and `utm_*` are read from the current page unless you pass them explicitly.
+
+| Option | Default | Notes |
+|---|---|---|
+| `visitorId` | auto | Stable per-browser id; generated + persisted if omitted. |
+| `pageUrl` / `referrer` | page values | Override the auto-read values. |
+| `utm` / `utmSource` / `utmMedium` / `utmCampaign` | URL query | Explicit value wins over the query string. |
+| `consent` | `true` | Sent as `consent`. |
+| `sessionId` | — | Seed an existing session to resume it. |
+| `onSession` | — | Fires after each reply with the latest `{ sessionId, conversationId }`. |
+| `parseResponse` | `d => d.answer` | Override reply extraction. |
+
+A runnable example lives in [`examples/make-webhook.html`](./examples/make-webhook.html).
+
+---
 
 > **Security:** never ship real API keys to the browser in production. Use `endpoint`/`send` to proxy through your server. Ready-made proxies (Express, WordPress REST) live in [`examples/`](./examples). For **Google Vertex AI**, the proxy supplies a `gcloud auth print-access-token` bearer server-side so the OAuth token never reaches the browser.
 

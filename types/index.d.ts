@@ -26,7 +26,16 @@ export type Provider =
   | 'azure-openai'
   | 'ollama'
   | 'anthropic'
-  | 'claude';
+  | 'claude'
+  | 'make'
+  | 'make.com'
+  | 'makecom'
+  | 'webhook';
+
+export interface SessionInfo {
+  sessionId: string | null;
+  conversationId: string | null;
+}
 
 export interface ThemeConfig {
   primary?: string;
@@ -114,10 +123,41 @@ export interface ProviderTransport {
   extraBody?: Record<string, unknown>;
 }
 
+/** Transport 4: the Make.com webhook (rubrika.es chatbot contract). */
+export interface MakeTransport {
+  provider: 'make' | 'make.com' | 'makecom' | 'webhook';
+  /** The Make.com webhook URL. */
+  endpoint: string;
+  /** Stable per-browser id. Auto-generated and persisted if omitted. */
+  visitorId?: string;
+  /** Defaults to location.href. */
+  pageUrl?: string;
+  /** Defaults to document.referrer. */
+  referrer?: string;
+  /** UTM params. Explicit values win; otherwise read from the page query string. */
+  utm?: { source?: string; medium?: string; campaign?: string };
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  /** Sent as `consent`. Defaults to true. */
+  consent?: boolean;
+  /** Seed an existing session_id (e.g. to resume or work around the new-session bug). */
+  sessionId?: string;
+  visitorStorageKey?: string;
+  sessionStorageKey?: string;
+  headers?: Record<string, string>;
+  credentials?: RequestCredentials;
+  /** Fires after every reply with the latest session/conversation ids. */
+  onSession?: (info: SessionInfo) => void;
+  /** Override reply extraction (defaults to `data.answer`). */
+  parseResponse?: (data: any) => string;
+}
+
 export type ChatbotConfig = BaseConfig &
   Partial<CustomTransport> &
   Partial<EndpointTransport> &
-  Partial<ProviderTransport>;
+  Partial<ProviderTransport> &
+  Partial<MakeTransport>;
 
 export interface CbEventMap {
   'cb:open': CustomEvent<Record<string, never>>;

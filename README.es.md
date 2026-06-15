@@ -5,7 +5,7 @@
 Un widget de chat diminuto, **agnóstico de proveedor** y **agnóstico de framework**.
 
 - 🧩 **Un solo [Web Component](https://developer.mozilla.org/es/docs/Web/API/Web_components) en JS puro** (`<chat-bot>`) con **Shadow DOM** → el CSS de la página no puede romperlo y sus estilos nunca se filtran hacia afuera. Se integra en **React, Angular, WordPress o HTML plano** sin cambios.
-- 🔌 **Agnóstico de proveedor** → apúntalo a tu propio backend (`endpoint`), a una API compatible con OpenAI, a Anthropic, o a una función `send()` totalmente personalizada. La interfaz nunca cambia.
+- 🔌 **Agnóstico de proveedor** → apúntalo a tu propio backend (`endpoint`), a una API compatible con OpenAI, a Anthropic, a un webhook basado en sesión (Make.com / n8n), o a una función `send()` totalmente personalizada. La interfaz nunca cambia.
 - 🌊 Respuestas en **streaming** (SSE) y sin streaming, token a token.
 - 🎨 **Tematización por producto** mediante variables CSS: colores, logo, mascota, textos, posición.
 - 📦 Se distribuye como **ESM** (`import`) para bundlers y como **IIFE** (`<script>` → `window.Chatbot`) para WordPress/CDN.
@@ -257,6 +257,51 @@ Chatbot.init({
   },
 });
 ```
+
+### 5. Webhook de Make.com (backends basados en sesión)
+
+Para backends no-code (Make.com, n8n, Zapier…) que guardan el estado de la conversación **en el servidor** mediante un id de sesión, en lugar de recibir todo el historial. El widget envía solo el último turno del usuario más un `session_id`; el backend devuelve la respuesta y el id a reutilizar.
+
+```js
+Chatbot.init({
+  provider: 'make',
+  endpoint: 'https://hook.eu1.make.com/xxxxxxxxxxxxxxxxxxxxxxxx',
+  consent: true, // pasa tu estado real de cookies/consentimiento
+  onSession: ({ sessionId, conversationId }) => console.log(sessionId, conversationId),
+});
+```
+
+**Cuerpo de la petición** (en cada turno):
+
+```json
+{
+  "session_id": "abc123",          // se omite en el primer mensaje
+  "visitor_id": "…",               // id estable por navegador, autogenerado
+  "message": "y cuánto cuesta?",   // solo el último turno del usuario
+  "page_url": "…", "referrer": "…",
+  "utm_source": "…", "utm_medium": "…", "utm_campaign": "…",
+  "consent": true,
+  "timestamp": "2026-06-15T10:30:00.000Z"
+}
+```
+
+**Cuerpo de la respuesta:** `{ "ok": true, "answer": "…", "session_id": "…", "conversation_id": "…" }` — la respuesta se lee de `answer`.
+
+La sesión se gestiona sola: la **primera** petición omite `session_id`; el id devuelto se reutiliza en cada petición siguiente (guardado en `sessionStorage`, así sobrevive a una recarga en la misma pestaña) para que el backend mantenga el contexto. `visitor_id` es un id estable guardado en `localStorage`. `page_url`, `referrer` y `utm_*` se leen de la página actual salvo que los pases explícitamente.
+
+| Opción | Por defecto | Notas |
+|---|---|---|
+| `visitorId` | auto | Id estable por navegador; se genera y persiste si se omite. |
+| `pageUrl` / `referrer` | valores de la página | Sobrescriben los leídos automáticamente. |
+| `utm` / `utmSource` / `utmMedium` / `utmCampaign` | query de la URL | El valor explícito gana sobre la query string. |
+| `consent` | `true` | Se envía como `consent`. |
+| `sessionId` | — | Inyecta una sesión existente para reanudarla. |
+| `onSession` | — | Se dispara tras cada respuesta con el último `{ sessionId, conversationId }`. |
+| `parseResponse` | `d => d.answer` | Sobrescribe la extracción de la respuesta. |
+
+Hay un ejemplo ejecutable en [`examples/make-webhook.html`](./examples/make-webhook.html).
+
+---
 
 > **Seguridad:** nunca envíes claves de API reales al navegador en producción. Usa `endpoint`/`send` para hacer proxy desde tu servidor. Ver ejemplos en [`examples/`](./examples). Para **Google Vertex AI**, el proxy aporta un bearer de `gcloud auth print-access-token` en el servidor, de modo que el token OAuth nunca llega al navegador.
 
